@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from app.database.connection import SessionLocal
+from sqlalchemy import text
 
 app = FastAPI()
 
-tareas = []
 
 class Tarea(BaseModel):
     titulo: str
+    usuario_id: int
 
 @app.get("/")
 def inicio():
@@ -15,32 +17,109 @@ def inicio():
 # 🔹 GET
 @app.get("/tareas")
 def obtener_tareas():
+    db = SessionLocal()
+
+    result = db.execute(text("SELECT * FROM tareas")).fetchall()
+
+    tareas = []
+    for row in result:
+        tareas.append({
+            "id": row[0],
+            "titulo": row[1],
+            "usuario_id": row[2]
+        })
+
+    db.close()
+
     return tareas
 
 # 🔹 POST
 @app.post("/tareas")
 def crear_tarea(tarea: Tarea):
-    nueva = {
-        "id": len(tareas) + 1,
-        "titulo": tarea.titulo
-    }
-    tareas.append(nueva)
-    return nueva
+    db = SessionLocal()
+
+    query = "INSERT INTO tareas (titulo, usuario_id) VALUES (:titulo, :usuario_id)"
+    db.execute(text(query), {
+        "titulo": tarea.titulo,
+        "usuario_id": 1
+    })
+
+    db.commit()
+    db.close()
+
+    return {"mensaje": "Tarea creada"}
 
 # 🔹 PUT (actualizar)
 @app.put("/tareas/{id}")
 def actualizar_tarea(id: int, tarea: Tarea):
-    for t in tareas:
-        if t["id"] == id:
-            t["titulo"] = tarea.titulo
-            return t
-    return {"error": "Tarea no encontrada"}
+    db = SessionLocal()
+
+    query = "UPDATE tareas SET titulo = :titulo WHERE id = :id"
+    db.execute(text(query), {
+        "titulo": tarea.titulo,
+        "id": id
+    })
+
+    db.commit()
+    db.close()
+
+    return {"mensaje": "Tarea actualizada"}
 
 # 🔹 DELETE (eliminar)
 @app.delete("/tareas/{id}")
 def eliminar_tarea(id: int):
-    for t in tareas:
-        if t["id"] == id:
-            tareas.remove(t)
-            return {"mensaje": "Tarea eliminada"}
-    return {"error": "Tarea no encontrada"}
+    db = SessionLocal()
+
+    query = "DELETE FROM tareas WHERE id = :id"
+    db.execute(text(query), {"id": id})
+
+    db.commit()
+    db.close()
+
+    return {"mensaje": "Tarea eliminada"}
+
+from app.database.connection import engine #Codigo para probar la coneccion
+
+@app.get("/test-db")
+def test_db():
+    return {"mensaje": "Conexión exitosa"}
+
+
+class Usuario(BaseModel):
+    username: str
+    password: str
+
+@app.post("/registro")
+def registrar(usuario: Usuario):
+    db = SessionLocal()
+
+    query = "INSERT INTO usuarios (username, password) VALUES (:username, :password)"
+    db.execute(text(query), {
+        "username": usuario.username,
+        "password": usuario.password
+    })
+
+    db.commit()
+    db.close()
+
+    return {"mensaje": "Usuario creado"}
+
+@app.post("/login")
+def login(usuario: Usuario):
+    db = SessionLocal()
+
+    query = "SELECT * FROM usuarios WHERE username = :username AND password = :password"
+    result = db.execute(text(query), {
+        "username": usuario.username,
+        "password": usuario.password
+    }).fetchone()
+
+    db.close()
+
+    if result:
+        return {
+            "mensaje": "Login exitoso",
+            "usuario_id": result[0]
+        }
+    else:
+        return {"error": "Credenciales incorrectas"}
